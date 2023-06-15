@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Fusion;
 using Fusion.Sockets;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
 // The NetworkSpawner is responsible for managing network operations for the game including player spawning and game state management.
-public class NetworkSpawner : NetworkBehaviour, INetworkRunnerCallbacks
+public class NetworkSpawner : MonoBehaviour, INetworkRunnerCallbacks
 {
     #region Singleton
     // Singleton pattern: instance field and property.
@@ -37,21 +38,27 @@ public class NetworkSpawner : NetworkBehaviour, INetworkRunnerCallbacks
         }
     }
     #endregion
-    
-    [SerializeField] private NetworkPrefabRef playerPrefab;
-    [SerializeField] private List<Color> playerColorList;
-   
-    private readonly Vector3 _spawnPosition = new Vector3(0, -4.45f, 0);
 
-    private readonly Dictionary<PlayerRef, NetworkObject> _spawnedCharacters = new Dictionary<PlayerRef, NetworkObject>();
+    [Networked] private int RestartCall { get; set; }
+    [SerializeField] private NetworkPrefabRef playerPrefab;
+    [SerializeField] private bool canPlaySolo;
+
+    private readonly Vector3 _spawnPosition = new Vector3(0, -4.45f, 0);
+    private readonly Dictionary<PlayerRef, NetworkObject> _spawnedPlayers = new();
     private NetworkRunner _runner;
     private NetworkSceneManagerDefault _networkSceneManager;
     
-    public bool initialized;
+    public bool Initialized { get; private set; }
     private bool _gameOver;
     private bool _canStart;
     private bool _networked;
+    private int _restartRequest;
 
+    private int GetActivePlayerObjects()
+    {
+        return _spawnedPlayers.Count(pair => pair.Value.gameObject.activeSelf);
+    }
+    
     private void Awake()
     {
         if (_instance != null && _instance != this)
@@ -63,24 +70,28 @@ public class NetworkSpawner : NetworkBehaviour, INetworkRunnerCallbacks
         _instance = this;
         _runner = GetComponent<NetworkRunner>();
         _networkSceneManager = GetComponent<NetworkSceneManagerDefault>();
-
     }
 
     private void OnEnable()
     {
-        LevelController.Instance.OnGameOver += OnGameOver;
+        LevelController.Instance.OnPlayerEliminated += OnPlayerEliminated;
     }
 
     private void OnDisable()
     {
-        LevelController.Instance.OnGameOver -= OnGameOver;
+        LevelController.Instance.OnPlayerEliminated -= OnPlayerEliminated;
     }
 
-    // Event handler for when the game is over
-    private void OnGameOver()
+    // Event handler for player elimination
+    private void OnPlayerEliminated()
     {
-        initialized = false;
-        _gameOver = true;
+        var activePlayerCount = GetActivePlayerObjects();
+        
+        if (activePlayerCount == 1)
+        {
+            Initialized = false;
+            _gameOver = true;
+        }
     }
     
     // Display GUI elements
@@ -110,16 +121,15 @@ public class NetworkSpawner : NetworkBehaviour, INetworkRunnerCallbacks
                     InitializeGame(2);
                 }
             }
-            
-            if (_gameOver)
+        }
+        
+        if (_gameOver)
+        {
+            if (GUI.Button(new Rect(0, 0, 200, 80), "Restart"))
             {
-                if (GUI.Button(new Rect(0, 0, 200, 80), "Restart"))
-                {
-                    RestartGame();
-                }
+                RestartRequestCall();
             }
         }
-
     }
 
     // Start the game in a given mode
@@ -141,9 +151,32 @@ public class NetworkSpawner : NetworkBehaviour, INetworkRunnerCallbacks
         _networked = true;
     }
 
+    private void RestartRequestCall()
+    {
+        _gameOver = false;
+
+        if (_runner.IsServer)
+        {
+            RestartCall++;
+
+            if (RestartCall == _runner.ActivePlayers.Count())
+            {
+                RestartCall = 0;
+                RestartGame();
+            }
+        }
+    }
+    
     // Restart the game
     private void RestartGame()
     {
+        foreach (var player in _spawnedPlayers)
+        {
+            if (!player.Value.isActiveAndEnabled)
+            {
+                player.Value.gameObject.SetActive(true);
+            }
+        }
         _gameOver = false;
 
         if (_runner.IsServer)
@@ -162,43 +195,29 @@ public class NetworkSpawner : NetworkBehaviour, INetworkRunnerCallbacks
     // When a player joins the game, spawn a character for them
     public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
     {
-        if (runner.IsServer)
+        if (_runner.IsServer)
         {
             // Spawn player and add to the list of spawned characters
             NetworkObject networkPlayerObject = runner.Spawn(playerPrefab, _spawnPosition, Quaternion.identity, player);
-            _spawnedCharacters.Add(player, networkPlayerObject);
-            
+            _spawnedPlayers.Add(player, networkPlayerObject);
+          
             // Initialize the spawned network player object.
             networkPlayerObject.GetComponent<Player>().RPC_Init();
-
-            // If there are more than one players, game can start
-            if (_spawnedCharacters.Count > 1)
-            {
-                if (initialized)
-                {
-                    initialized = false;
-                    _gameOver = false;
-                }
-
-                _canStart = true;
-            }
         }
+        
+        UpdateGameState();
     }
-
-    // Mark the game as initialized
-    private void InvokeInitialized()
-    {
-        initialized = true;
-    }
-
+    
     // When a player leaves the game, despawn their character and remove from the list of spawned characters
     public void OnPlayerLeft(NetworkRunner runner, PlayerRef player)
     {
-        if (_spawnedCharacters.TryGetValue(player, out NetworkObject networkObject))
+        if (_spawnedPlayers.TryGetValue(player, out NetworkObject networkObject))
         {
             runner.Despawn(networkObject);
-            _spawnedCharacters.Remove(player);
+            _spawnedPlayers.Remove(player);
         }
+        
+        UpdateGameState();
     }
 
     // Handle input from the players
@@ -221,6 +240,45 @@ public class NetworkSpawner : NetworkBehaviour, INetworkRunnerCallbacks
         input.Set(data);
     }
 
+    // Updates the game state based on the number of spawned players.
+    private void UpdateGameState()
+    {
+        // Check if playing solo is allowed.
+        if (canPlaySolo)
+        {
+            // In solo play mode, set the canStart flag to true since solo play can always start.
+            _canStart = true;
+        }
+        else
+        {
+            // Check if there are more than one spawned players.
+            if (_spawnedPlayers.Count > 1)
+            {
+                // Check if the game has been initialized.
+                if (Initialized)
+                {
+                    // Reset the initialization flag and game over flag.    
+                    Initialized = false;
+                    _gameOver = false;
+                }
+
+                // Set the canStart flag to true, indicating the game can be started.
+                _canStart = true;
+            }
+            else
+            {
+                // Set the canStart flag to false since there is not enough players to start the game.
+                _canStart = false;
+            }
+        }
+    }
+    
+    // Mark the game as initialized
+    private void InvokeInitialized()
+    {
+        Initialized = true;
+    }
+    
     public void OnInputMissing(NetworkRunner runner, PlayerRef player, NetworkInput input)
     {
     }
@@ -251,6 +309,7 @@ public class NetworkSpawner : NetworkBehaviour, INetworkRunnerCallbacks
 
     public void OnSessionListUpdated(NetworkRunner runner, List<SessionInfo> sessionList)
     {
+        
     }
 
     public void OnCustomAuthenticationResponse(NetworkRunner runner, Dictionary<string, object> data)

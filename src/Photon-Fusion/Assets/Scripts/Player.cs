@@ -1,4 +1,5 @@
 ﻿using Fusion;
+using TMPro;
 using UnityEngine;
 
 // This class represents the player character, networked via Fusion.
@@ -7,10 +8,13 @@ public class Player : NetworkBehaviour
     // These variables hold player properties, exposed in the Unity inspector.
     [SerializeField] private float speed;
     [SerializeField] private int startingHealth;
+    [SerializeField] private TextMeshPro playerNameText;
 
     // These properties are networked, they hold the player's visual color and health.
     [Networked] private Color PlayerColor { get; set; }
     [Networked] private int PlayerHealth { get; set; }
+    [Networked] private int PlayerIndex { get; set; }
+    [Networked] private int PlayerScore { get; set; }
 
     // Variables for internal usage
     private SpriteRenderer _spriteRenderer;
@@ -25,38 +29,52 @@ public class Player : NetworkBehaviour
 
     private void OnEnable()
     {
-        LevelController.Instance.OnGameOver += OnGameOver;
         LevelController.Instance.OnEnemyOutOfBounds += OnEnemyOutOfBounds;
+        LevelController.Instance.OnPlayerCollidedWithEnemy += OnPlayerCollidedWithEnemy;
     }
 
     private void OnDisable()
     {
-        LevelController.Instance.OnGameOver -= OnGameOver;
         LevelController.Instance.OnEnemyOutOfBounds -= OnEnemyOutOfBounds;
+        LevelController.Instance.OnPlayerCollidedWithEnemy += OnPlayerCollidedWithEnemy;
     }
 
-    // Method called when the game is over.
-    private void OnGameOver()
+    // Method called when this player is eliminated.
+    private void OnPlayerEliminated()
     {
         // Reset player health and score.
         PlayerHealth = startingHealth;
-        _score = 0;
+        PlayerScore = 0;
+        gameObject.SetActive(false);
     }
 
     // Method called when an enemy is out of bounds.
     private void OnEnemyOutOfBounds(EnemyData enemyData)
     {
         // Increment score by the score value of the enemy.
-        _score += enemyData.Score;
+        RPC_IncreaseScore(enemyData.Score);
+    }
+    
+    private void OnPlayerCollidedWithEnemy(Player player, EnemyData enemy)
+    {
+        if (player != this)
+        {
+            RPC_IncreaseScore(enemy.Score);
+        }
+        else
+        {
+            RPC_DealDamage(enemy.Score);
+        }
     }
 
     // Method called when the player is spawned.
     public override void Spawned()
     {
-        // Initialize player color, health and score.
+        // Initialize player networked variables
         PlayerColor = Color.white;
         PlayerHealth = startingHealth;
-        _score = 0;
+        PlayerIndex = 0;
+        PlayerScore = 0;
     }
 
     // Method for initializing player color. This method can be called over the network.
@@ -65,13 +83,15 @@ public class Player : NetworkBehaviour
     {
         // Set a random color.
         PlayerColor = Random.ColorHSV();
+        PlayerIndex = Runner.SessionInfo.PlayerCount;
     }
 
     // Method called every frame for rendering.
     public override void Render()
     {
         // Interpolate the player's color to the new color.
-        _spriteRenderer.color = Color.Lerp(_spriteRenderer.color, PlayerColor, 1);
+        _spriteRenderer.color = PlayerColor;
+        playerNameText.text = $"Player {PlayerIndex} \n Health: {PlayerHealth} \n Score: {PlayerScore}";
     }
 
     // Method called every network tick.
@@ -85,7 +105,6 @@ public class Player : NetworkBehaviour
         }
     }
 
-    // Method called when a collider enters the trigger.
     private void OnTriggerEnter2D(Collider2D other)
     {
         // Check if the other object is an enemy.
@@ -93,8 +112,10 @@ public class Player : NetworkBehaviour
         {
             // If so, destroy the enemy and deal damage to the player.
             var collidedEnemy = other.gameObject.GetComponent<Enemy>();
+            var enemyData = collidedEnemy.EnemyData;
+            
             collidedEnemy.DestroyEnemy();
-            RPC_DealDamage(collidedEnemy.damage);
+            LevelController.Instance.PlayerCollidedWithEnemy(this, enemyData);
         }
     }
 
@@ -113,10 +134,21 @@ public class Player : NetworkBehaviour
     [Rpc(RpcSources.All, RpcTargets.All)]
     private void RPC_DealDamage(int damage)
     {
-        // Subtract the damage from the player's health and end the game if health is zero.
-        if (PlayerHealth - damage > 0)
+        // Subtract the damage from the player's health or eliminate the player if health is depleted.
+        if (PlayerHealth - damage > 1)
+        {
             PlayerHealth -= damage;
+        }
         else
-            LevelController.Instance.GameOver();
+        {
+            OnPlayerEliminated();
+            LevelController.Instance.PlayerEliminated();
+        }
+    }
+
+    [Rpc(RpcSources.All, RpcTargets.All)]
+    private void RPC_IncreaseScore(int amount)
+    {
+        PlayerScore += amount;
     }
 }

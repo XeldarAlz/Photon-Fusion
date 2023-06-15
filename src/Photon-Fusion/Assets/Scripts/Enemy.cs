@@ -1,5 +1,6 @@
 using Fusion;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 // The Enemy class is responsible for controlling individual enemy behavior in the game. 
 // This includes handling its network properties, initial placement, movement, and removal from the game when necessary.
@@ -11,16 +12,12 @@ public class Enemy : NetworkBehaviour
     [Networked] private int Damage { get; set; }
     [Networked] private int Score { get; set; }
 
-    // These public variables hold the Damage and Score values for use in non-networked game code.
-    public int damage;
-    public int score;
-
     // The Sprite of this enemy and the Renderer to display it.
     private Sprite Sprite { get; set; }
     private SpriteRenderer _spriteRenderer;
 
     // Holds data specific to this enemy.
-    private EnemyData _data;
+    public EnemyData EnemyData { get; private set; }
 
     private void Awake()
     {
@@ -52,7 +49,7 @@ public class Enemy : NetworkBehaviour
         if (!IsWithinBorders())
         {
             // If not, notify level controller and destroy enemy
-            LevelController.Instance.EnemyOutOfBounds(_data);
+            LevelController.Instance.EnemyOutOfBounds(EnemyData);
             DestroyEnemy();
         }
     }
@@ -68,20 +65,21 @@ public class Enemy : NetworkBehaviour
     public void RPC_SetEnemyData(int enemyIndex)
     {
         EnemyIndex = enemyIndex;
-        _data = EnemySpawner.Instance.enemySettings[EnemyIndex];
-        Sprite = _data.Sprite;
-        Speed = _data.Speed;
-        Damage = _data.Damage;
-        damage = Damage;
-        Score = _data.Score;
-        score = Score;
+        EnemyData = EnemySpawner.Instance.enemySettings[EnemyIndex];
+        Sprite = EnemyData.Sprite;
+        Speed = EnemyData.Speed;
+        Damage = EnemyData.Damage;
+        Score = EnemyData.Score;
         _spriteRenderer.sprite = Sprite;
     }
 
     // DestroyEnemy is called when the enemy has gone out of bounds and needs to be removed.
     public void DestroyEnemy()
     {
-        Runner.Despawn(Object);
+        if (Object)
+        {
+            Runner.Despawn(Object);
+        }
     }
 
     // IsWithinBorders checks if the enemy is still within the boundaries of the screen.

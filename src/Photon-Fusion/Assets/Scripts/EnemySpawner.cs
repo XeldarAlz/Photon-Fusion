@@ -71,7 +71,7 @@ public class EnemySpawner : NetworkBehaviour
     public override void FixedUpdateNetwork()
     {
         // Check if the network spawner is initialized before spawning enemies.
-        if (NetworkSpawner.Instance.initialized)
+        if (NetworkSpawner.Instance.Initialized)
             // Check if the cooldown timer has expired or hasn't started yet.
             if (Cooldown.ExpiredOrNotRunning(Runner))
                 // Only the server spawns new enemies.
@@ -88,7 +88,7 @@ public class EnemySpawner : NetworkBehaviour
     {
         // Create a new enemy instance.
         var networkEnemyObject =
-            Runner.Spawn(enemyPrefab, Vector3.up * 100, Quaternion.identity, Object.InputAuthority);
+            Runner.Spawn(enemyPrefab, Vector3.zero, Quaternion.identity, Object.InputAuthority);
 
         // Choose a random type of enemy from the settings array.
         var enemyDataIndex = Random.Range(0, enemySettings.Length);
