@@ -63,7 +63,7 @@ public class Player : NetworkBehaviour
         }
         else
         {
-            RPC_DealDamage(enemy.Score);
+            DealDamage(enemy.Score);
         }
     }
 
@@ -113,9 +113,13 @@ public class Player : NetworkBehaviour
             // If so, destroy the enemy and deal damage to the player.
             var collidedEnemy = other.gameObject.GetComponent<Enemy>();
             var enemyData = collidedEnemy.EnemyData;
-            
+
+            if (collidedEnemy.gameObject.activeInHierarchy)
+            {
+                LevelController.Instance.PlayerCollidedWithEnemy(this, enemyData);
+            }
+
             collidedEnemy.DestroyEnemy();
-            LevelController.Instance.PlayerCollidedWithEnemy(this, enemyData);
         }
     }
 
@@ -131,13 +135,8 @@ public class Player : NetworkBehaviour
     }
 
     // Method for dealing damage to the player. This method can be called over the network.
-    [Rpc(RpcSources.All, RpcTargets.All)]
-    private void RPC_DealDamage(int damage)
+    private void DealDamage(int damage)
     {
-        // This method is called for how many players there are on the stage
-        // Needs to be called once for per player
-        
-        
         // Subtract the damage from the player's health or eliminate the player if health is depleted.
         if (PlayerHealth - damage > 1)
         {

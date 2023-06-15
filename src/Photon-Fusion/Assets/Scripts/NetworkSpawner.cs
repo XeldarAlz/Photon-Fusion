@@ -111,7 +111,7 @@ public class NetworkSpawner : MonoBehaviour, INetworkRunnerCallbacks
             }
         }
 
-        // Display start/restart buttons if the runner is a server and the game can be started or restarted
+        // Display start button if the runner is a server and the game can be started
         if (_runner.IsServer)
         {
             if (_canStart)
