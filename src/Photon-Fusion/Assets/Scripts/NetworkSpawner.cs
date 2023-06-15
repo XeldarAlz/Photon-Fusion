@@ -167,20 +167,17 @@ public class NetworkSpawner : NetworkBehaviour, INetworkRunnerCallbacks
             // Spawn player and add to the list of spawned characters
             NetworkObject networkPlayerObject = runner.Spawn(playerPrefab, _spawnPosition, Quaternion.identity, player);
             _spawnedCharacters.Add(player, networkPlayerObject);
+            
+            // Initialize the spawned network player object.
+            networkPlayerObject.GetComponent<Player>().RPC_Init();
 
-            // If there are more than one players and game isn't initialized, initialize the game
+            // If there are more than one players, game can start
             if (_spawnedCharacters.Count > 1)
             {
                 if (initialized)
                 {
                     initialized = false;
                     _gameOver = false;
-                }
-
-                // Initialize each spawned character
-                foreach (var spawnedCharacter in _spawnedCharacters)
-                {
-                    spawnedCharacter.Value.GetComponent<Player>().RPC_Init();
                 }
 
                 _canStart = true;
