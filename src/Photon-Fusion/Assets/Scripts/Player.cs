@@ -134,6 +134,10 @@ public class Player : NetworkBehaviour
     [Rpc(RpcSources.All, RpcTargets.All)]
     private void RPC_DealDamage(int damage)
     {
+        // This method is called for how many players there are on the stage
+        // Needs to be called once for per player
+        
+        
         // Subtract the damage from the player's health or eliminate the player if health is depleted.
         if (PlayerHealth - damage > 1)
         {
