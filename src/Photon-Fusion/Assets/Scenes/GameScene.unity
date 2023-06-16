@@ -279,7 +279,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1086271765}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 4, y: 2, z: 0}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -298,17 +298,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9f072020650616c49a7e290d7115914e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _interpolationDataSource: 0
   playerPrefab:
     RawGuidValue: dd13aa6fa3e06fc4ba740af73ffa38da
-  playerColorList:
-  - {r: 1, g: 0, b: 0, a: 1}
-  - {r: 0, g: 1, b: 0, a: 1}
-  - {r: 0, g: 0, b: 1, a: 1}
-  - {r: 1, g: 1, b: 0, a: 1}
-  - {r: 0, g: 1, b: 1, a: 1}
-  - {r: 1, g: 0, b: 1, a: 1}
-  initialized: 0
+  canPlaySolo: 0
 --- !u!114 &1086271768
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -356,8 +348,7 @@ MonoBehaviour:
   NetworkGuid:
     RawGuidValue: c49a198eec4c4db19cb9def0aa9f99d7
   NestedObjects: []
-  NetworkedBehaviours:
-  - {fileID: 1086271767}
+  NetworkedBehaviours: []
   SimulationBehaviours: []
 --- !u!1 &2126324432
 GameObject:

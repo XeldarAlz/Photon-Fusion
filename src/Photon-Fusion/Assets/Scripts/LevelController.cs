@@ -1,3 +1,4 @@
+using Fusion;
 using UnityEngine;
 
 // This class controls the overall logic of the level
@@ -46,22 +47,30 @@ public class LevelController : MonoBehaviour
     }
 
     // Delegate and event for game over scenario.
-    public delegate void OnGameOverDelegate();
-    public event OnGameOverDelegate OnGameOver;
+    public delegate void OnPlayerEliminatedDelegate();
+    public event OnPlayerEliminatedDelegate OnPlayerEliminated;
 
     // Delegate and event for when an enemy goes out of bounds.
     public delegate void OnEnemyOutOfBoundsDelegate(EnemyData enemyData);
     public event OnEnemyOutOfBoundsDelegate OnEnemyOutOfBounds;
 
+    public delegate void OnPlayerCollidedWithEnemyDelegate(Player player, EnemyData enemy);
+    public event OnPlayerCollidedWithEnemyDelegate OnPlayerCollidedWithEnemy; 
+
     // Method to call when the game is over.
-    public void GameOver()
+    public void PlayerEliminated()
     {
-        OnGameOver?.Invoke();
+        OnPlayerEliminated?.Invoke();
     }
 
     // Method to call when an enemy goes out of bounds.
     public void EnemyOutOfBounds(EnemyData enemyData)
     {
         OnEnemyOutOfBounds?.Invoke(enemyData);
+    }
+
+    public void PlayerCollidedWithEnemy(Player player, EnemyData enemy)
+    {
+        OnPlayerCollidedWithEnemy?.Invoke(player, enemy);
     }
 }

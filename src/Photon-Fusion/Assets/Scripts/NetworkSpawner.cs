@@ -1,57 +1,56 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Fusion;
 using Fusion.Sockets;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
-// The NetworkSpawner is responsible for managing network operations for the game including player spawning and game state management.
-public class NetworkSpawner : NetworkBehaviour, INetworkRunnerCallbacks
+// The NetworkSpawner class is responsible for managing network-related operations such as player spawning and synchronization, as well as controlling game state across a networked session.
+public class NetworkSpawner : MonoBehaviour, INetworkRunnerCallbacks
 {
     #region Singleton
-    // Singleton pattern: instance field and property.
+    // Singleton implementation to ensure only one instance of NetworkSpawner exists.
+    // This allows for global access to its methods and properties across other scripts.
     private static NetworkSpawner _instance;
     public static NetworkSpawner Instance
     {
         get
         {
-            // Check if the instance is null.
             if (_instance == null)
             {
-                // Try to find an existing LevelController object in the scene.
                 _instance = FindObjectOfType<NetworkSpawner>();
-
-                // If no LevelController object exists, create a new one.
                 if (_instance == null)
                 {
                     var singletonObject = new GameObject("NetworkSpawner");
                     _instance = singletonObject.AddComponent<NetworkSpawner>();
                 }
 
-                // Ensure the singleton object persists across scenes.
                 DontDestroyOnLoad(_instance.gameObject);
             }
 
-            // Return the instance.
             return _instance;
         }
     }
     #endregion
-    
-    [SerializeField] private NetworkPrefabRef playerPrefab;
-    [SerializeField] private List<Color> playerColorList;
-   
-    private readonly Vector3 _spawnPosition = new Vector3(0, -4.45f, 0);
 
-    private readonly Dictionary<PlayerRef, NetworkObject> _spawnedCharacters = new Dictionary<PlayerRef, NetworkObject>();
+    [SerializeField] private NetworkPrefabRef playerPrefab; // A reference to the prefab used to spawn new player entities.
+    [SerializeField] private bool canPlaySolo; // This variable controls whether a single player can play the game alone, without the need for other players.
+
+    private readonly Vector3 _spawnPosition = new Vector3(0, -4.45f, 0); // The position where players are spawned when they join the game.
+    private readonly Dictionary<PlayerRef, NetworkObject> _spawnedPlayers = new(); // Collection mapping player references to their corresponding network objects, allowing for easy access and management of players in the game.
+    private readonly List<Player> _playerList = new(); // List to hold the players currently in the game.
+
+    // References to network components needed for managing the game over the network.
     private NetworkRunner _runner;
     private NetworkSceneManagerDefault _networkSceneManager;
-    
-    public bool initialized;
+
+    // Properties to keep track of the game state.
+    public bool Initialized { get; private set; }
     private bool _gameOver;
     private bool _canStart;
     private bool _networked;
-
+    
     private void Awake()
     {
         if (_instance != null && _instance != this)
@@ -63,213 +62,161 @@ public class NetworkSpawner : NetworkBehaviour, INetworkRunnerCallbacks
         _instance = this;
         _runner = GetComponent<NetworkRunner>();
         _networkSceneManager = GetComponent<NetworkSceneManagerDefault>();
-
-    }
-
-    private void OnEnable()
-    {
-        LevelController.Instance.OnGameOver += OnGameOver;
-    }
-
-    private void OnDisable()
-    {
-        LevelController.Instance.OnGameOver -= OnGameOver;
-    }
-
-    // Event handler for when the game is over
-    private void OnGameOver()
-    {
-        initialized = false;
-        _gameOver = true;
     }
     
-    // Display GUI elements
-    private void OnGUI()
+    private void OnEnable()
     {
-        // Display host/join buttons if the game isn't networked
-        if (!_networked)
-        {
-            if (GUI.Button(new Rect(0, 0, 200, 80), "Host"))
-            {
-                StartGame(GameMode.Host);
-            }
-
-            if (GUI.Button(new Rect(0, 80, 200, 80), "Join"))
-            {
-                StartGame(GameMode.Client);
-            }
-        }
-
-        // Display start/restart buttons if the runner is a server and the game can be started or restarted
-        if (_runner.IsServer)
-        {
-            if (_canStart)
-            {
-                if (GUI.Button(new Rect(0, 0, 200, 80), "Start"))
-                {
-                    InitializeGame(2);
-                }
-            }
-            
-            if (_gameOver)
-            {
-                if (GUI.Button(new Rect(0, 0, 200, 80), "Restart"))
-                {
-                    RestartGame();
-                }
-            }
-        }
-
+        LevelController.Instance.OnPlayerEliminated += OnPlayerEliminated;
+    }
+    private void OnDisable()
+    {
+        LevelController.Instance.OnPlayerEliminated -= OnPlayerEliminated;
     }
 
-    // Start the game in a given mode
+    // Method for handling GUI events, primarily for buttons related to starting, joining and restarting the game.
+    private void OnGUI()
+    {
+        if (!_networked)
+        {
+            if (GUI.Button(new Rect(0, 0, 200, 80), "Host")) StartGame(GameMode.Host);
+            if (GUI.Button(new Rect(0, 80, 200, 80), "Join")) StartGame(GameMode.Client);
+        }
+
+        if (_runner.IsServer)
+        {
+            if (_gameOver && GUI.Button(new Rect(0, 0, 200, 80), "Restart")) RestartGame();
+            if (_canStart && GUI.Button(new Rect(0, 0, 200, 80), "Start")) Invoke(nameof(InvokeInitialized), 2);
+        }
+    }
+
+    // This method starts a networked game in a specified mode (either as a Host or Client).
     private async void StartGame(GameMode mode)
     {
         _runner.ProvideInput = true;
 
-        // Create start game arguments
-        var startGameArgs = new StartGameArgs()
-        {
-            GameMode = mode,
-            SessionName = "PlayRoom",
-            Scene = SceneManager.GetActiveScene().buildIndex,
-            SceneManager = _networkSceneManager
-        };
-
-        // Start the game
+        var startGameArgs = new StartGameArgs() { GameMode = mode, SessionName = "PlayRoom", Scene = SceneManager.GetActiveScene().buildIndex, SceneManager = _networkSceneManager };
         await _runner.StartGame(startGameArgs);
         _networked = true;
     }
 
-    // Restart the game
+    // This method restarts the game and resets each player's data.
     private void RestartGame()
     {
         _gameOver = false;
 
+        foreach (var player in _playerList)
+        {
+            player.RPC_ResetPlayerData();
+        }
+
         if (_runner.IsServer)
         {
-           InitializeGame(2);
+            Invoke(nameof(InvokeInitialized), 2);
         }
     }
 
-    // Initialize the game after a certain delay
-    private void InitializeGame(int delay)
-    {
-        _canStart = false;
-        Invoke(nameof(InvokeInitialized), delay);
-    }
-    
-    // When a player joins the game, spawn a character for them
+    // This method spawns a player character when a player joins the game.
     public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
     {
-        if (runner.IsServer)
+        if (_runner.IsServer)
         {
-            // Spawn player and add to the list of spawned characters
             NetworkObject networkPlayerObject = runner.Spawn(playerPrefab, _spawnPosition, Quaternion.identity, player);
-            _spawnedCharacters.Add(player, networkPlayerObject);
-            
-            // Initialize the spawned network player object.
-            networkPlayerObject.GetComponent<Player>().RPC_Init();
+            _spawnedPlayers.Add(player, networkPlayerObject);
+            var spawnedPlayer = networkPlayerObject.GetComponent<Player>();
+            _playerList.Add(spawnedPlayer);
 
-            // If there are more than one players, game can start
-            if (_spawnedCharacters.Count > 1)
+            spawnedPlayer.RPC_Init();
+        }
+
+        UpdateGameState();
+    }
+
+    // This method despawns a player character and removes them from the list when a player leaves the game.
+    public void OnPlayerLeft(NetworkRunner runner, PlayerRef player)
+    {
+        if (_spawnedPlayers.TryGetValue(player, out NetworkObject networkObject))
+        {
+            var spawnedPlayer = networkObject.GetComponent<Player>();
+            _playerList.Remove(spawnedPlayer);
+            runner.Despawn(networkObject);
+            _spawnedPlayers.Remove(player);
+        }
+
+        UpdateGameState();
+    }
+
+    // This method handles input from the players and sends it over the network.
+    public void OnInput(NetworkRunner runner, NetworkInput input)
+    {
+        var data = new NetworkInputData();
+
+        if (Input.GetKey(KeyCode.A)) data.Direction += Vector3.left;
+        if (Input.GetKey(KeyCode.D)) data.Direction += Vector3.right;
+
+        input.Set(data);
+    }
+
+    // Method to update the game state based on the number of spawned players.
+    private void UpdateGameState()
+    {
+        if (canPlaySolo)
+        {
+            _canStart = true;
+        }
+        else
+        {
+            if (_spawnedPlayers.Count > 1)
             {
-                if (initialized)
+                if (Initialized)
                 {
-                    initialized = false;
+                    Initialized = false;
                     _gameOver = false;
                 }
 
                 _canStart = true;
             }
+            else
+            {
+                _canStart = false;
+            }
         }
     }
 
-    // Mark the game as initialized
+    // Method to handle player elimination.
+    private void OnPlayerEliminated()
+    {
+        if (_runner.IsServer && GetActivePlayerCount() <= 1)
+        {
+            Initialized = false;
+            _gameOver = true;
+        }
+    }
+    
+    // Method to mark the game as initialized.
     private void InvokeInitialized()
     {
-        initialized = true;
+        Initialized = true;
+        _canStart = false;
     }
-
-    // When a player leaves the game, despawn their character and remove from the list of spawned characters
-    public void OnPlayerLeft(NetworkRunner runner, PlayerRef player)
+    
+    // Method that counts the number of active players in the game.
+    private int GetActivePlayerCount()
     {
-        if (_spawnedCharacters.TryGetValue(player, out NetworkObject networkObject))
-        {
-            runner.Despawn(networkObject);
-            _spawnedCharacters.Remove(player);
-        }
+        return _playerList.Count(pair => pair.body.gameObject.activeSelf);
     }
 
-    // Handle input from the players
-    public void OnInput(NetworkRunner runner, NetworkInput input)
-    {
-        // Create a new input data
-        var data = new NetworkInputData();
-
-        // Set the direction based on player input
-        if (Input.GetKey(KeyCode.A))
-        {
-            data.Direction += Vector3.left;
-        }
-        if (Input.GetKey(KeyCode.D))
-        {
-            data.Direction += Vector3.right;
-        }
-
-        // Set the input data
-        input.Set(data);
-    }
-
-    public void OnInputMissing(NetworkRunner runner, PlayerRef player, NetworkInput input)
-    {
-    }
-
-    public void OnShutdown(NetworkRunner runner, ShutdownReason shutdownReason)
-    {
-    }
-
-    public void OnConnectedToServer(NetworkRunner runner)
-    {
-    }
-
-    public void OnDisconnectedFromServer(NetworkRunner runner)
-    {
-    }
-
-    public void OnConnectRequest(NetworkRunner runner, NetworkRunnerCallbackArgs.ConnectRequest request, byte[] token)
-    {
-    }
-
-    public void OnConnectFailed(NetworkRunner runner, NetAddress remoteAddress, NetConnectFailedReason reason)
-    {
-    }
-
-    public void OnUserSimulationMessage(NetworkRunner runner, SimulationMessagePtr message)
-    {
-    }
-
-    public void OnSessionListUpdated(NetworkRunner runner, List<SessionInfo> sessionList)
-    {
-    }
-
-    public void OnCustomAuthenticationResponse(NetworkRunner runner, Dictionary<string, object> data)
-    {
-    }
-
-    public void OnHostMigration(NetworkRunner runner, HostMigrationToken hostMigrationToken)
-    {
-    }
-
-    public void OnReliableDataReceived(NetworkRunner runner, PlayerRef player, ArraySegment<byte> data)
-    {
-    }
-
-    public void OnSceneLoadDone(NetworkRunner runner)
-    {
-    }
-
-    public void OnSceneLoadStart(NetworkRunner runner)
-    {
-    }
+    // Methods for handling various network events. These methods are currently empty but may be filled in as needed.
+    public void OnInputMissing(NetworkRunner runner, PlayerRef player, NetworkInput input) {}
+    public void OnShutdown(NetworkRunner runner, ShutdownReason shutdownReason) {}
+    public void OnConnectedToServer(NetworkRunner runner) {}
+    public void OnDisconnectedFromServer(NetworkRunner runner) {}
+    public void OnConnectRequest(NetworkRunner runner, NetworkRunnerCallbackArgs.ConnectRequest request, byte[] token) {}
+    public void OnConnectFailed(NetworkRunner runner, NetAddress remoteAddress, NetConnectFailedReason reason) {}
+    public void OnUserSimulationMessage(NetworkRunner runner, SimulationMessagePtr message) {}
+    public void OnSessionListUpdated(NetworkRunner runner, List<SessionInfo> sessionList) {}
+    public void OnCustomAuthenticationResponse(NetworkRunner runner, Dictionary<string, object> data) {}
+    public void OnHostMigration(NetworkRunner runner, HostMigrationToken hostMigrationToken) {}
+    public void OnReliableDataReceived(NetworkRunner runner, PlayerRef player, ArraySegment<byte> data) {}
+    public void OnSceneLoadDone(NetworkRunner runner) {}
+    public void OnSceneLoadStart(NetworkRunner runner) {}
 }
