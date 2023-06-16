@@ -2,18 +2,18 @@ using Fusion;
 using UnityEngine;
 using UnityEngine.Serialization;
 
-// The Enemy class is responsible for controlling individual enemy behavior in the game. 
-// This includes handling its network properties, initial placement, movement, and removal from the game when necessary.
+// The Enemy class controls the behavior of the individual enemies in the game, and handles their network properties.
+// It is responsible for their initial placement, movement, and destruction when necessary.
 public class Enemy : NetworkBehaviour
 {
-    // These properties are networked so that they stay synchronized across all instances of the game.
+    // Networked properties for individual enemy instances to keep them synchronized across 
     [Networked] private int EnemyIndex { get; set; }
     [Networked] private float Speed { get; set; }
     [Networked] private int Damage { get; set; }
     [Networked] private int Score { get; set; }
 
-    // The Sprite of this enemy and the Renderer to display it.
-    private Sprite Sprite { get; set; }
+    // SpriteRenderer is used to display the enemy sprite on the screen.
+    private Sprite _sprite;
     private SpriteRenderer _spriteRenderer;
 
     // Holds data specific to this enemy.
@@ -24,7 +24,7 @@ public class Enemy : NetworkBehaviour
         _spriteRenderer = GetComponentInChildren<SpriteRenderer>();
     }
 
-    // Spawned is called when the enemy is spawned into the game. This sets the initial networked properties.
+    // The Spawned method is called when an enemy is spawned into the game, and initializes the networked properties.
     public override void Spawned()
     {
         Speed = 0;
@@ -32,9 +32,9 @@ public class Enemy : NetworkBehaviour
         Score = 0;
     }
 
+    // Init method positions the enemy at a random x-value within screen borders and at the top of the screen.
     public void Init()
     {
-        // Set enemy position to random x value within screen borders and at top of screen
         transform.position = new Vector3(Random.Range(LeftTopCornerX(), RightTopCornerX()),
             ScreenBorders.TopLeft.y, 0);
     }
@@ -57,23 +57,23 @@ public class Enemy : NetworkBehaviour
     // Render updates the enemy's sprite each frame.
     public override void Render()
     {
-        _spriteRenderer.sprite = Sprite;
+        _spriteRenderer.sprite = _sprite;
     }
 
-    // RPC_SetEnemyData is a networked function that sets the enemy's properties from a given index in the enemy settings.
+    // Networked function that sets the enemy's properties from a given index in the enemy settings.
     [Rpc(RpcSources.All, RpcTargets.All)]
     public void RPC_SetEnemyData(int enemyIndex)
     {
         EnemyIndex = enemyIndex;
         EnemyData = EnemySpawner.Instance.enemySettings[EnemyIndex];
-        Sprite = EnemyData.Sprite;
+        _sprite = EnemyData.Sprite;
         Speed = EnemyData.Speed;
         Damage = EnemyData.Damage;
         Score = EnemyData.Score;
-        _spriteRenderer.sprite = Sprite;
+        _spriteRenderer.sprite = _sprite;
     }
 
-    // DestroyEnemy is called when the enemy has gone out of bounds and needs to be removed.
+    // Called when the enemy has gone out of bounds or needs to be removed.
     public void DestroyEnemy()
     {
         if (Object)
@@ -82,7 +82,7 @@ public class Enemy : NetworkBehaviour
         }
     }
 
-    // IsWithinBorders checks if the enemy is still within the boundaries of the screen.
+    // Checks if the enemy is still within the boundaries of the screen.
     private bool IsWithinBorders()
     {
         return transform.position.y + transform.lossyScale.y / 2 * _spriteRenderer.size.y >=

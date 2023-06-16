@@ -16,7 +16,6 @@ public class ScreenBorders : MonoBehaviour
     }
 
     // This method calculates the screen borders based on the main camera's perspective, translating the screen's edge coordinates from screen space to world space. 
-    // It assigns these values to the respective properties of the class. 
     private void GetScreenBorders()
     {
         // Get top right screen corner's world coordinates.

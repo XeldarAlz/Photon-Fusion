@@ -83,13 +83,11 @@ public class Player : NetworkBehaviour
         }
     }
 
-    // FixedUpdateNetwork is called at a fixed interval
+    // FixedUpdateNetwork is called on every network tick. This handles the movement of the player
     public override void FixedUpdateNetwork()
     {
-        // Get input data and move the player
         if (GetInput(out NetworkInputData data))
         {
-            // Normalize direction vector for consistent speed in all directions
             data.Direction.Normalize();
             Move(data.Direction * Runner.DeltaTime);
         }
