@@ -299,7 +299,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   playerPrefab:
     RawGuidValue: dd13aa6fa3e06fc4ba740af73ffa38da
-  canPlaySolo: 0
+  canPlaySolo: 1
 --- !u!114 &1086271768
 MonoBehaviour:
   m_ObjectHideFlags: 0
